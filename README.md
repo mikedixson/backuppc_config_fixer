@@ -69,7 +69,7 @@ BackupPC 4.4.0 uses `Data::Dumper` to serialize configuration files. With Perl 5
 Run the diagnostic tool to check for corruption:
 
 ```bash
-cd /home/miked/backupfile_config_fixer
+cd backupfile_config_fixer
 perl backuppc_config_diagnostic.pl
 ```
 
