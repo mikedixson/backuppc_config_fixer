@@ -64,7 +64,6 @@ sub detect_corruption_patterns {
         CgiStatusHilightColor
         CgiUserConfigEdit
         BackupFilesExclude
-        CgiNavBarLinks
         CgiExt2ContentType
         ClientShareName2Path
     );
@@ -162,7 +161,29 @@ sub detect_corruption_patterns {
         }
     }
     
-    # Pattern 5: Nested structure corruption
+    # Pattern 5: CgiNavBarLinks should be an arrayref - check for hash brackets
+    if ($content =~ /\$Conf\{CgiNavBarLinks\}\s*=\s*\{/) {
+        push @issues, {
+            type => 'CGINAVRBARLINKS_AS_HASH',
+            config => 'CgiNavBarLinks',
+            severity => 'CRITICAL',
+            description => "CgiNavBarLinks incorrectly uses {} (hash) instead of [] (arrayref)",
+            line => get_line_number($content, 'CgiNavBarLinks.*=.*\{')
+        };
+    }
+    
+    # Pattern 6: CgiNavBarLinks with parentheses
+    if ($content =~ /\$Conf\{CgiNavBarLinks\}\s*=\s*\(/) {
+        push @issues, {
+            type => 'CGINAVRBARLINKS_WITH_PARENS',
+            config => 'CgiNavBarLinks',
+            severity => 'CRITICAL',
+            description => "CgiNavBarLinks incorrectly uses () instead of [] (arrayref)",
+            line => get_line_number($content, 'CgiNavBarLinks.*=.*\(')
+        };
+    }
+    
+    # Pattern 7: Nested structure corruption
     if ($content =~ /\$Conf\{[^}]+\}\s*=\s*\{\s*\[/) {
         push @issues, {
             type => 'NESTED_CORRUPTION',
@@ -222,6 +243,14 @@ foreach my \$config (\@test_configs) {
     if (exists \$Conf{\$config}) {
         my \$ref_type = ref(\$Conf{\$config});
         \$results{\$config} = \$ref_type || 'SCALAR';
+    }
+}
+
+# Explicitly check CgiNavBarLinks is an arrayref
+if (exists \$Conf{CgiNavBarLinks}) {
+    my \$ref_type = ref(\$Conf{CgiNavBarLinks});
+    unless (\$ref_type eq 'ARRAY') {
+        print "WARNING: CgiNavBarLinks is not an arrayref (found \$ref_type)\\n";
     }
 }
 
@@ -407,9 +436,19 @@ foreach my $file (@config_files) {
     my $file_issues = 0;
     
     # Check for array syntax using parentheses (corrupted)
-    # Skip known hash configs when checking arrays
-    my @hash_configs = qw(CgiStatusHilightColor CgiUserConfigEdit BackupFilesExclude CgiNavBarLinks CgiExt2ContentType ClientShareName2Path);
+    # Skip known hash configs when checking arrays (but CgiNavBarLinks should be array)
+    my @hash_configs = qw(CgiStatusHilightColor CgiUserConfigEdit BackupFilesExclude CgiExt2ContentType ClientShareName2Path);
     my $hash_pattern = join('|', @hash_configs);
+    
+    # Special check for CgiNavBarLinks corruption (should be arrayref)
+    if ($content =~ /\$Conf\{CgiNavBarLinks\}\s*=\s*\{/) {
+        print "  ✗ CORRUPTED ARRAY in $file: CgiNavBarLinks (uses {} instead of [])\n";
+        $file_issues++;
+    }
+    if ($content =~ /\$Conf\{CgiNavBarLinks\}\s*=\s*\(/) {
+        print "  ✗ CORRUPTED ARRAY in $file: CgiNavBarLinks (uses () instead of [])\n";
+        $file_issues++;
+    }
     
     while ($content =~ /\$Conf\{([^}]+)\}\s*=\s*\(/g) {
         my $config = $1;
@@ -584,7 +623,7 @@ if ($syntax_issues == 0 && $corruption_found == 0 && $total_issues == 0) {
     print "  - Type mismatches in loaded configuration\n";
     print "\nRecommended actions:\n";
     print "1. Run the unified fix script:\n";
-    print "   sudo perl /home/miked/backuppc_unified_fix.pl\n";
+    print "   sudo perl backuppc_unified_fix.pl\n";
     print "2. Restart BackupPC after fixes:\n";
     print "   sudo systemctl restart backuppc\n";
     print "3. Re-run this diagnostic:\n";

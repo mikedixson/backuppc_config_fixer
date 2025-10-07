@@ -81,7 +81,6 @@ sub fix_hash_configurations {
         CgiStatusHilightColor
         CgiUserConfigEdit
         BackupFilesExclude
-        CgiNavBarLinks
         CgiExt2ContentType
         ClientShareName2Path
     );
@@ -137,11 +136,24 @@ sub fix_array_configurations {
     my ($content) = @_;
     my $fixes = 0;
     
+    # Special handling for CgiNavBarLinks - must be an arrayref
+    # Convert hash {} to array [] for CgiNavBarLinks
+    if ($content =~ s/(\$Conf\{CgiNavBarLinks\}\s*=\s*)\{([^}]*)\};/$1\[$2\];/g) {
+        log_message("    ✓ Fixed CgiNavBarLinks: converted {} (hash) to [] (arrayref)\n");
+        $fixes++;
+    }
+    
+    # Convert parentheses () to array [] for CgiNavBarLinks
+    if ($content =~ s/(\$Conf\{CgiNavBarLinks\}\s*=\s*)\(([^)]*)\);/$1\[$2\];/g) {
+        log_message("    ✓ Fixed CgiNavBarLinks: converted () to [] (arrayref)\n");
+        $fixes++;
+    }
+    
     # Fix multi-line array assignments using parentheses: (...) -> [...]
     while ($content =~ s/(\$Conf\{([^}]+)\}\s*=\s*)\(\s*\n((?:[^)]*\n)*?)(\s*)\);/$1\[\n$3$4\];/gs) {
         my $config_name = $2;
-        # Skip known hash configs
-        next if $config_name =~ /^(CgiStatusHilightColor|CgiUserConfigEdit|BackupFilesExclude|CgiNavBarLinks|CgiExt2ContentType|ClientShareName2Path)$/;
+        # Skip known hash configs (but allow CgiNavBarLinks which should be array)
+        next if $config_name =~ /^(CgiStatusHilightColor|CgiUserConfigEdit|BackupFilesExclude|CgiExt2ContentType|ClientShareName2Path)$/;
         log_message("    ✓ Fixed $config_name: converted () to [] (multi-line array)\n");
         $fixes++;
     }
@@ -150,8 +162,8 @@ sub fix_array_configurations {
     while ($content =~ s/(\$Conf\{([^}]+)\}\s*=\s*)\(([^)]*)\);/$1\[$3\];/g) {
         my $config_name = $2;
         my $inner_content = $3;
-        # Skip known hash configs
-        next if $config_name =~ /^(CgiStatusHilightColor|CgiUserConfigEdit|BackupFilesExclude|CgiNavBarLinks|CgiExt2ContentType|ClientShareName2Path)$/;
+        # Skip known hash configs (but allow CgiNavBarLinks which should be array)
+        next if $config_name =~ /^(CgiStatusHilightColor|CgiUserConfigEdit|BackupFilesExclude|CgiExt2ContentType|ClientShareName2Path)$/;
         # Only fix if it doesn't contain hash syntax (key => value)
         next if $inner_content =~ /=>/;
         log_message("    ✓ Fixed $config_name: converted () to [] (inline array)\n");
@@ -216,6 +228,15 @@ if (exists \$Conf{CgiStatusHilightColor}) {
     }
 }
 
+# Check CgiNavBarLinks is an array
+if (exists \$Conf{CgiNavBarLinks}) {
+    my \$ref_type = ref(\$Conf{CgiNavBarLinks});
+    if (\$ref_type ne 'ARRAY') {
+        print "ERROR: CgiNavBarLinks is \$ref_type, not ARRAY\\n";
+        exit 1;
+    }
+}
+
 print "SUCCESS: Configuration loaded correctly\\n";
 exit 0;
 };
@@ -246,7 +267,9 @@ sub process_file {
     # Check if file needs fixing
     my $needs_fix = 0;
     $needs_fix = 1 if $content =~ /\$Conf\{[^}]+\}\s*=\s*\(/;  # Any config with ()
-    $needs_fix = 1 if $content =~ /\$Conf\{(?:CgiStatusHilightColor|CgiUserConfigEdit|BackupFilesExclude|CgiNavBarLinks|CgiExt2ContentType|ClientShareName2Path)\}\s*=\s*\[/;  # Hash configs with []
+    $needs_fix = 1 if $content =~ /\$Conf\{(?:CgiStatusHilightColor|CgiUserConfigEdit|BackupFilesExclude|CgiExt2ContentType|ClientShareName2Path)\}\s*=\s*\[/;  # Hash configs with []
+    $needs_fix = 1 if $content =~ /\$Conf\{CgiNavBarLinks\}\s*=\s*\{/;  # CgiNavBarLinks as hash (should be array)
+    $needs_fix = 1 if $content =~ /\$Conf\{CgiNavBarLinks\}\s*=\s*\(/;  # CgiNavBarLinks with parentheses
     
     if (!$needs_fix) {
         log_message("  ✓ No issues found - configuration is clean\n");
